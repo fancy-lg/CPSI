@@ -1,3 +1,8 @@
+@misc{relic-toolkit,
+    author = {D. F. Aranha and C. P. L. Gouvêa and T. Markmann and R. S. Wahby and K. Liao},        
+    title = {{RELIC is an Efficient LIbrary for Cryptography}},
+    howpublished = {\url{https://github.com/relic-toolkit/relic}},
+}
 #include <stdio.h>
 #include <assert.h>
 
@@ -7,18 +12,18 @@
 int cp_common_receiver(g1_t r,bn_t a){
 	g1_mul_gen(r,a);
 }
-int cp_pbpsi_common_receiver(g1_t r,bn_t *b1,g2_t *b2,g1_t *b3,g1_t *d,bn_t *x,size_t m){	
+int cp_pbpsi_common_receiver(g1_t r,g2_t *b2,g1_t *b3,g1_t *d,bn_t *x,size_t m,bn_t *_x){	
 	int i, result = RLC_OK;
-	bn_t s,q,*_x=RLC_ALLOCA(bn_t,m),*res=RLC_ALLOCA(bn_t,m),a,c1,c2;
+	bn_t s,q,res,a,c1,c2;
 	g1_t g1,g2;
 	bn_null(s);
 	bn_null(q);
 	bn_null(c1);
 	bn_null(c2);
 	bn_null(a);
+	bn_null(res);
 	for(i=0;i<m;i++){
 		bn_null(_x[i]);
-		bn_null(res[i]);
 	}
 	RLC_TRY{
 		bn_new(s);
@@ -26,25 +31,21 @@ int cp_pbpsi_common_receiver(g1_t r,bn_t *b1,g2_t *b2,g1_t *b3,g1_t *d,bn_t *x,s
 		bn_new(c1);
 		bn_new(c2);
 		bn_new(a);
+		bn_new(res);
 		for(i=0;i<m;i++){
 		bn_new(_x[i]);
-		bn_new(res[i]);
 	}
 		pc_get_ord(q);
 	    bn_rand_mod(a,q);
 		bn_rand_mod(s,q);
 		for(i=0;i<m;i++){
-			bn_rand_mod(res[i],q);
 			bn_add(_x[i],s,x[i]);
 			bn_mod(_x[i],_x[i],q);
-			bn_mul(b1[i],res[i],_x[i]);
-			bn_mod(b1[i],b1[i],q);
-			bn_mod_inv(res[i],res[i],q);
-			bn_mul(c1,res[i],a);
-			g2_mul_gen(b2[i],c1);
-			bn_mul(c2,a,_x[i]);
-			bn_mod_inv(c2,c2,q);
-			g1_mul(b3[i],r,c2);
+			bn_mul(_x[i],a,_x[i]);
+			bn_mod(_x[i],_x[i],q);
+			g2_mul_gen(b2[i],_x[i]);
+			bn_mod_inv(res,_x[i],q);
+			g1_mul(b3[i],r,res);
 		}
 		bn_mod_inv(c1,a,q);
 		g1_mul(d[0],r,c1);
@@ -94,12 +95,12 @@ int cp_pbpsi_second(g1_t *t, g1_t *u, g1_t *d, const bn_t *y, size_t n) {
 	return result;
 }
 
-int cp_pbpsi_intersection(int len,bn_t a, bn_t *b1,const g2_t *b2, const g1_t *b3,size_t m, const g1_t *t, const g1_t *u, size_t n,g1_t *g3,g1_t *g4) {
-	int j, k, result = RLC_OK;
+int cp_pbpsi_intersection(int len,bn_t a, const g2_t *b2, const g1_t *b3,size_t m, const g1_t *t, const g1_t *u, size_t n,g1_t *g3,g1_t *g4) {
+	int j, k,num[m],result = RLC_OK;
 	gt_t e1,e2;
 	g1_t g1;
 	g2_t g2;
-	bn_t res,q;
+	bn_t q,res;
 	gt_null(e1);
 	gt_new(e1);
 	gt_null(e2);
@@ -108,34 +109,46 @@ int cp_pbpsi_intersection(int len,bn_t a, bn_t *b1,const g2_t *b2, const g1_t *b
 	g1_new(g1);
 	g2_null(g2);
 	g2_new(g2);
-	bn_null(res);
-	bn_new(res);
 	bn_null(q);
 	bn_new(q);
+	bn_null(res);
+	bn_new(res);
 	pc_get_ord(q);
-	bn_rand_mod(res,q);
 	g2_mul_gen(g2,a);
+	for(j=0;j<m;j++){
+		num[j]=0;
+	}
 		RLC_TRY {
 			if (m > 0) {
 				len = 0;
 				for (k = 0; k < n; k++) {
 					pc_map(e1,t[k],g2);
-					g1_mul_gen(g3[k],res);
 					for (j = 0; j < m; j++) {
 						g1_sub(g1,u[k],b3[j]);
-						g1_mul(g1,g1,b1[j]);
 						pc_map(e2,g1,b2[j]);
 						if (gt_cmp(e1,e2) == RLC_EQ ) {
+							num[j]=1;
 							len++;
-							g1_mul(g3[k],g4[k],b1[j]);
 						}
 					}
-					bn_rand_mod(res,q);
-					g1_mul(g3[k],g3[k],res);
-					g1_mul(g4[k],g4[k],res);
-				
 				}
-				printf("\n len:%d\n",len);
+				g1_mul_gen(g1,a);
+				k=0;
+				for(j=0;j<len;j++){
+					if(num[j]==1){
+						bn_rand_mod(res,q);
+						g1_mul(g4[k],g1,res);
+						g1_mul(g3[k],b3[j],res);
+						k++;
+					}
+				}
+				for(j=len;j<n;j++){
+					bn_rand_mod(res,q);
+					g1_mul(g4[k],g1,res);
+					bn_rand_mod(res,q);
+					g1_mul_gen(g3[k],res);
+					k++;
+				}
 			}
 		}
 		RLC_CATCH_ANY {
@@ -145,16 +158,16 @@ int cp_pbpsi_intersection(int len,bn_t a, bn_t *b1,const g2_t *b2, const g1_t *b
 		}
 		return result;
 }
-int cp_pbpsi_out(bn_t *b1,size_t m,size_t n,g1_t *g3,g1_t *g4,bn_t *x,bn_t *z) {
-	for(int i=0;i<n;i++){
-		for(int j=0;j<m;j++){
-			g1_mul(g4[i],g4[i],b1[j]);
-			if(g1_cmp(g3[i],g4[i])==RLC_EQ){
-				bn_copy(z[i],x[j]);
-			}
+int cp_pbpsi_out(bn_t *b1,size_t m,size_t n,g1_t *g3,g1_t *g4,bn_t *x,bn_t *z,bn_t *_x) {
+	int i=0;
+	for(int j=0;j<m;j++){
+		g1_mul(g3[j],g3[j],_x[j]);
+		if(g1_cmp(g3[i],g4[i])==RLC_EQ){
+			bn_copy(z[i],x[j]);
+			i++;
 		}
 	}
-
+	printf("\n%d\n",i);
 }
 
 
@@ -164,7 +177,7 @@ int cp_pbpsi_out(bn_t *b1,size_t m,size_t n,g1_t *g3,g1_t *g4,bn_t *x,bn_t *z) {
 
 static void bench(void) {
 	int len, result, code = RLC_ERR;
-	bn_t q,a,x[M], y[N], b1[M],z[N],random;
+	bn_t q,a,x[M], y[N], b1[M],z[N],random,*_x = RLC_ALLOCA(bn_t, M);;
 	g1_t u[N],d[2],t[N],r,b3[M],g3[M],g4[M];
 	crt_t crt;
 	g2_t b2[M];
@@ -220,17 +233,17 @@ static void bench(void) {
 	} BENCH_END;
 
 	BENCH_RUN("cp_pbpsi_common_receiver") {
-		BENCH_ADD(cp_pbpsi_common_receiver(r, b1,b2,b3,d, x, M));
+		BENCH_ADD(cp_pbpsi_common_receiver(r,b2,b3,d, x, M,_x));
 	} BENCH_END;
 	BENCH_RUN("cp_pbpsi_second") {
 		BENCH_ADD(cp_pbpsi_second(t, u,  d, x, N));
 	} BENCH_END;
 
 	BENCH_RUN("cp_pbpsi_intersection") {
-		BENCH_ADD(cp_pbpsi_intersection(len, a,b1,b2,b3, M, t, u, N,g3,g4));
+		BENCH_ADD(cp_pbpsi_intersection(len, a,b2,b3, M, t, u, N,g3,g4));
 	} BENCH_END;
 	BENCH_RUN("cp_pbpsi_out") {
-		BENCH_ADD(cp_pbpsi_out(b1,M,N,g3,g4,x,z));
+		BENCH_ADD(cp_pbpsi_out(b1,M,N,g3,g4,x,z,_x));
 	} BENCH_END;
 
     bn_free(q);
